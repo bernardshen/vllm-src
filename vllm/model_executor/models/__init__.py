@@ -1,3 +1,4 @@
+import functools
 import importlib
 from typing import Dict, List, Optional, Type
 
@@ -23,6 +24,7 @@ _GENERATION_MODELS = {
     "DeepseekForCausalLM": ("deepseek", "DeepseekForCausalLM"),
     "DeepseekV2ForCausalLM": ("deepseek_v2", "DeepseekV2ForCausalLM"),
     "FalconForCausalLM": ("falcon", "FalconForCausalLM"),
+    "FuyuForCausalLM": ("fuyu", "FuyuForCausalLM"),
     "GemmaForCausalLM": ("gemma", "GemmaForCausalLM"),
     "Gemma2ForCausalLM": ("gemma2", "Gemma2ForCausalLM"),
     "GPT2LMHeadModel": ("gpt2", "GPT2LMHeadModel"),
@@ -49,6 +51,9 @@ _GENERATION_MODELS = {
     "OlmoForCausalLM": ("olmo", "OlmoForCausalLM"),
     "OPTForCausalLM": ("opt", "OPTForCausalLM"),
     "OrionForCausalLM": ("orion", "OrionForCausalLM"),
+    "PersimmonForCausalLM": ("persimmon", "PersimmonForCausalLM"),
+    "PaliGemmaForConditionalGeneration":
+    ("paligemma", "PaliGemmaForConditionalGeneration"),
     "PhiForCausalLM": ("phi", "PhiForCausalLM"),
     "Phi3ForCausalLM": ("llama", "LlamaForCausalLM"),
     "Phi3VForCausalLM": ("phi3v", "Phi3VForCausalLM"),
@@ -62,6 +67,7 @@ _GENERATION_MODELS = {
     "ArcticForCausalLM": ("arctic", "ArcticForCausalLM"),
     "XverseForCausalLM": ("xverse", "XverseForCausalLM"),
     "Phi3SmallForCausalLM": ("phi3_small", "Phi3SmallForCausalLM"),
+    "MedusaModel": ("medusa", "Medusa"),
     "MLPSpeculatorPreTrainedModel": ("mlp_speculator", "MLPSpeculator"),
     "JambaForCausalLM": ("jamba", "JambaForCausalLM")
 }
@@ -94,6 +100,14 @@ _ROCM_PARTIALLY_SUPPORTED_MODELS: Dict[str, str] = {
 class ModelRegistry:
 
     @staticmethod
+    @functools.lru_cache(maxsize=128)
+    def _get_model(model_arch: str):
+        module_name, model_cls_name = _MODELS[model_arch]
+        module = importlib.import_module(
+            f"vllm.model_executor.models.{module_name}")
+        return getattr(module, model_cls_name, None)
+
+    @staticmethod
     def load_model_cls(model_arch: str) -> Optional[Type[nn.Module]]:
         if model_arch in _OOT_MODELS:
             return _OOT_MODELS[model_arch]
@@ -109,10 +123,7 @@ class ModelRegistry:
                     "Model architecture %s is partially supported by ROCm: %s",
                     model_arch, _ROCM_PARTIALLY_SUPPORTED_MODELS[model_arch])
 
-        module_name, model_cls_name = _MODELS[model_arch]
-        module = importlib.import_module(
-            f"vllm.model_executor.models.{module_name}")
-        return getattr(module, model_cls_name, None)
+        return ModelRegistry._get_model(model_arch)
 
     @staticmethod
     def get_supported_archs() -> List[str]:
