@@ -17,6 +17,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_cached_tokenizer
 from vllm.usage.usage_lib import UsageContext
 from vllm.utils import Counter, deprecate_kwargs
+import time
 
 logger = init_logger(__name__)
 
@@ -306,8 +307,8 @@ class LLM:
             lora_request=lora_request,
         )
 
-        outputs = self._run_engine(use_tqdm=use_tqdm)
-        return LLMEngine.validate_outputs(outputs, RequestOutput)
+        outputs, lat_list = self._run_engine(use_tqdm=use_tqdm)
+        return LLMEngine.validate_outputs(outputs, RequestOutput), lat_list
 
     @overload  # LEGACY: single (prompt + optional token ids)
     def encode(
@@ -557,8 +558,12 @@ class LLM:
         outputs: List[Union[RequestOutput, EmbeddingRequestOutput]] = []
         total_in_toks = 0
         total_out_toks = 0
+        lat_list = []
         while self.llm_engine.has_unfinished_requests():
+            st = time.time()
             step_outputs = self.llm_engine.step()
+            et = time.time()
+            lat_list.append((et - st)*1000000)
             for output in step_outputs:
                 if output.finished:
                     outputs.append(output)
@@ -580,4 +585,5 @@ class LLM:
         # Sort the outputs by request ID.
         # This is necessary because some requests may be finished earlier than
         # its previous requests.
-        return sorted(outputs, key=lambda x: int(x.request_id))
+        print(lat_list)
+        return sorted(outputs, key=lambda x: int(x.request_id)), lat_list
