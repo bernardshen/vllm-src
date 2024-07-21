@@ -317,8 +317,8 @@ class LLM:
             lora_request=lora_request,
             prompt_adapter_request=prompt_adapter_request)
 
-        outputs, lat_list = self._run_engine(use_tqdm=use_tqdm)
-        return LLMEngine.validate_outputs(outputs, RequestOutput), lat_list
+        outputs, req_token_time, parallel_info = self._run_engine(use_tqdm=use_tqdm)
+        return LLMEngine.validate_outputs(outputs, RequestOutput), req_token_time, parallel_info
 
     @overload  # LEGACY: single (prompt + optional token ids)
     def encode(
@@ -577,13 +577,21 @@ class LLM:
         outputs: List[Union[RequestOutput, EmbeddingRequestOutput]] = []
         total_in_toks = 0
         total_out_toks = 0
-        lat_list = []
+        req_token_time = {}
+        req_generated = {}
+        parallel_info = []
         while self.llm_engine.has_unfinished_requests():
-            st = time.time()
             step_outputs = self.llm_engine.step()
-            et = time.time()
-            lat_list.append((et - st)*1000000)
+            parallel_info.append(len(step_outputs))
             for output in step_outputs:
+                request_id = output.request_id
+                if request_id not in req_generated:
+                    req_generated[request_id] = 0
+                    req_token_time[request_id] = []
+                assert(len(output.outputs) == 1)
+                if len(output.outputs[0].token_ids) == req_generated[request_id] + 1:
+                    req_token_time[request_id].append(time.time())
+                    req_generated[request_id] += 1
                 if output.finished:
                     outputs.append(output)
                     if use_tqdm:
@@ -604,5 +612,4 @@ class LLM:
         # Sort the outputs by request ID.
         # This is necessary because some requests may be finished earlier than
         # its previous requests.
-        print(lat_list)
-        return sorted(outputs, key=lambda x: int(x.request_id)), lat_list
+        return sorted(outputs, key=lambda x: int(x.request_id)), req_token_time, parallel_info
